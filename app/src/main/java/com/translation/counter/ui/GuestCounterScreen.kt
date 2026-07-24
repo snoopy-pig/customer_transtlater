@@ -32,7 +32,6 @@ fun GuestCounterScreen(
     val currentSession by viewModel.currentSession.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
     val isListening by viewModel.isListening.collectAsState()
-    val isSpeaking by viewModel.isSpeaking.collectAsState()
     val currentKoreanSub by viewModel.currentKoreanSubtitle.collectAsState()
     val currentGuestSub by viewModel.currentGuestSubtitle.collectAsState()
     val selectedLanguage by viewModel.guestTargetLanguage.collectAsState()
@@ -40,7 +39,7 @@ fun GuestCounterScreen(
     val isSessionActive = currentSession?.isActive == true
     val listState = rememberLazyListState()
 
-    // Reverse messages list so NEWEST messages stay on TOP (최신 메시지 상단 배치)
+    // Newest messages stay on TOP (최신 대화 최상단 노출)
     val reversedMessages = remember(chatMessages) { chatMessages.reversed() }
 
     Column(
@@ -49,7 +48,7 @@ fun GuestCounterScreen(
             .background(DarkBg)
             .padding(12.dp)
     ) {
-        // Clean Header Bar (Fixing status pulse distortion)
+        // Compact Header Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -72,7 +71,7 @@ fun GuestCounterScreen(
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "손님용 카운터 (Guest)",
+                    text = "손님용 (Guest)",
                     color = TextWhite,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp
@@ -81,12 +80,12 @@ fun GuestCounterScreen(
 
             MicPulseAnimation(
                 isListening = isListening,
-                isSpeaking = isSpeaking
+                isSpeaking = false
             )
         }
 
         if (!isSessionActive) {
-            // Language Selection Flag Grid Area
+            // Flag Selection Grid
             Card(
                 modifier = Modifier
                     .fillMaxSize()
@@ -103,14 +102,14 @@ fun GuestCounterScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "언어를 선택하시면 통역이 시작됩니다",
+                        text = "언어를 선택하시면 대화가 시작됩니다",
                         color = Color.White,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
                     Text(
-                        text = "Select your language to begin translation",
+                        text = "Select language to start real-time prompt chat",
                         color = TextSubtle,
                         fontSize = 13.sp,
                         modifier = Modifier.padding(bottom = 20.dp)
@@ -154,7 +153,7 @@ fun GuestCounterScreen(
                 }
             }
         } else {
-            // Active Session: TOP 50% Live Chat Feed (Newest on TOP)
+            // TOP 50%: Live Log (Newest on TOP)
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -175,7 +174,7 @@ fun GuestCounterScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "💬 Live Log (최신 대화 상단 표시)",
+                            text = "💬 실시간 대화 프롬프트 (최신순 상단)",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
@@ -201,7 +200,7 @@ fun GuestCounterScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "대화를 시작하면 내역이 여기에 최신순으로 쌓입니다.",
+                                text = "음성으로 말하거나 메시지를 적으시면 상단에 즉시 표시됩니다.",
                                 color = TextSubtle,
                                 fontSize = 13.sp
                             )
@@ -229,7 +228,7 @@ fun GuestCounterScreen(
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
                                             Text(
-                                                text = if (isGuestMsg) "👨‍👩‍👧‍👦 You (Guest)" else "👨‍💼 Staff (직원)",
+                                                text = if (isGuestMsg) "👨‍👩‍👧‍👦 You (손님)" else "👨‍💼 Staff (직원)",
                                                 color = if (isGuestMsg) PrimaryCyan else ActiveGreen,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 12.sp
@@ -277,7 +276,7 @@ fun GuestCounterScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "[${selectedLanguage.displayName} - Main Subtitle]",
+                        text = "[${selectedLanguage.displayName} - AI 번역 자막]",
                         color = PrimaryCyan,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -292,13 +291,13 @@ fun GuestCounterScreen(
                     )
 
                     Text(
-                        text = "[Korean Original]",
+                        text = "[직원 한국어 원문]",
                         color = TextKoreanYellow,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = if (currentKoreanSub.isNotBlank()) currentKoreanSub else "대화 내용이 표시됩니다.",
+                        text = if (currentKoreanSub.isNotBlank()) currentKoreanSub else "직원의 대화 내용이 표시됩니다.",
                         color = TextKoreanYellow.copy(alpha = 0.9f),
                         fontSize = 16.sp,
                         lineHeight = 22.sp

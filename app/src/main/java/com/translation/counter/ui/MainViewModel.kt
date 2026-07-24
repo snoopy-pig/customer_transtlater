@@ -30,7 +30,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Audio states
     val isListening = audioEngine.isListening
-    val isSpeaking = audioEngine.isSpeaking
 
     // Subtitle Text States
     private val _currentKoreanSubtitle = MutableStateFlow("")
@@ -52,7 +51,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // Listen for remote incoming messages and trigger TTS selectively per role
+        // Listen for remote incoming messages and update real-time prompt text without playing TTS voice
         viewModelScope.launch {
             chatMessages.collect { messages ->
                 val latest = messages.lastOrNull()
@@ -60,23 +59,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     lastHandledMessageId = latest.id
                     _currentKoreanSubtitle.value = latest.koreanText
                     _currentGuestSubtitle.value = latest.guestText
-
-                    val role = _selectedRole.value ?: return@collect
-                    val guestLang = TargetLanguage.fromCode(latest.guestLanguageCode)
-
-                    if (role == DeviceRole.GUEST && latest.speaker == SpeakerType.STAFF.name) {
-                        // Play TTS on Guest Device in Guest Language when Staff sends message
-                        val guestLocale = when (guestLang) {
-                            TargetLanguage.ENGLISH -> Locale.US
-                            TargetLanguage.SIMPLIFIED_CHINESE -> Locale.CHINA
-                            TargetLanguage.TRADITIONAL_CHINESE -> Locale.TAIWAN
-                            TargetLanguage.JAPANESE -> Locale.JAPAN
-                        }
-                        audioEngine.speak(latest.guestText, guestLocale)
-                    } else if (role == DeviceRole.STAFF && latest.speaker == SpeakerType.GUEST.name) {
-                        // Play TTS on Staff Device in Korean when Guest sends message
-                        audioEngine.speak(latest.koreanText, Locale.KOREA)
-                    }
                 }
             }
         }
@@ -121,9 +103,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             if (role == DeviceRole.STAFF) {
+                // Staff Spoke Korean -> AI Translates to Guest Language
                 _currentKoreanSubtitle.value = recognizedText
-                val translatedGuestText = audioEngine.translate(
-                    recognizedText,
+                
+                val translatedGuestText = AiTranslationEngine.translateWithAi(
+                    text = recognizedText,
                     sourceLangCode = "ko-KR",
                     targetLangCode = currentLang.code
                 )
@@ -139,9 +123,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 firebaseService.sendMessage(message)
 
             } else {
+                // Guest Spoke Foreign Language -> AI Translates to Korean
                 _currentGuestSubtitle.value = recognizedText
-                val translatedKoreanText = audioEngine.translate(
-                    recognizedText,
+                
+                val translatedKoreanText = AiTranslationEngine.translateWithAi(
+                    text = recognizedText,
                     sourceLangCode = currentLang.code,
                     targetLangCode = "ko-KR"
                 )
@@ -171,7 +157,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         firebaseService.endSession(room.roomId) { messages, session ->
             val exportedFiles = logExporter.exportSessionLogs(session, messages)
             val msg = if (exportedFiles.isNotEmpty()) {
-                "세션 종료 완료! ${exportedFiles.size}개 로컬 파일 저장됨:\n${exportedFiles.first().parent}"
+                "세션 종료 완료! ${exportedFiles.size}개 로컬 파일 저장됨"
             } else {
                 "세션 종료 완료."
             }

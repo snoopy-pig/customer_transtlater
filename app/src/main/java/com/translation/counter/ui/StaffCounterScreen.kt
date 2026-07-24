@@ -11,7 +11,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,7 +33,6 @@ fun StaffCounterScreen(
     val currentSession by viewModel.currentSession.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
     val isListening by viewModel.isListening.collectAsState()
-    val isSpeaking by viewModel.isSpeaking.collectAsState()
     val currentKoreanSub by viewModel.currentKoreanSubtitle.collectAsState()
     val currentGuestSub by viewModel.currentGuestSubtitle.collectAsState()
 
@@ -42,7 +40,7 @@ fun StaffCounterScreen(
     var manualInputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    // Reverse messages so NEWEST messages stay on TOP (최신 메시지 상단 노출)
+    // Newest messages stay on TOP (최신 대화 최상단 노출)
     val reversedMessages = remember(chatMessages) { chatMessages.reversed() }
 
     Column(
@@ -74,7 +72,7 @@ fun StaffCounterScreen(
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "직원용 카운터 (Staff)",
+                    text = "직원용 (Staff)",
                     color = TextWhite,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp
@@ -84,7 +82,7 @@ fun StaffCounterScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MicPulseAnimation(
                     isListening = isListening,
-                    isSpeaking = isSpeaking
+                    isSpeaking = false
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(
@@ -112,7 +110,7 @@ fun StaffCounterScreen(
             }
         }
 
-        // TOP 50% AREA: Real-time Chat History Feed (최신 메시지 상단 노출)
+        // TOP 50% AREA: Real-time Chat History Feed (최신순 상단 노출)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -133,7 +131,7 @@ fun StaffCounterScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "💬 실시간 대화 내역 (최신순 상단)",
+                        text = "💬 실시간 대화 프롬프트 (최신순 상단)",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
@@ -158,7 +156,7 @@ fun StaffCounterScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "대화 내역이 여기에 최신순(상단)으로 쌓입니다.",
+                            text = "대화 내역이 여기에 최신순(상단)으로 즉시 쌓입니다.",
                             color = TextSubtle,
                             fontSize = 13.sp
                         )
@@ -186,7 +184,7 @@ fun StaffCounterScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Text(
-                                            text = if (isStaffMsg) "👨‍💼 직원 (Staff)" else "👨‍👩‍👧‍👦 손님 (Guest)",
+                                            text = if (isStaffMsg) "👨‍💼 Staff (직원)" else "👨‍👩‍👧‍👦 Guest (손님)",
                                             color = if (isStaffMsg) ActiveGreen else PrimaryCyan,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 12.sp
@@ -240,7 +238,7 @@ fun StaffCounterScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "[한국어 번역 최신 자막]",
+                        text = "[한국어 원문]",
                         color = TextKoreanYellow,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -255,7 +253,7 @@ fun StaffCounterScreen(
                     )
 
                     Text(
-                        text = "[손님 언어 원문]",
+                        text = "[손님 언어 AI 번역 자막]",
                         color = PrimaryCyan,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold

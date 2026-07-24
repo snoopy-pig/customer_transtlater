@@ -32,14 +32,14 @@ class FirebaseTranslationService {
     private var isFallbackRestMode = false
     private val gson = Gson()
 
-    // Public Firebase Realtime REST Base URL for instant zero-config 2-device pairing
+    // Public Universal Firebase Realtime REST Gateway for instant 2-device pairing over internet
     private val REST_BASE_URL = "https://counter-translation-default-rtdb.firebaseio.com"
 
     init {
         try {
             firestore = FirebaseFirestore.getInstance()
         } catch (e: Exception) {
-            Log.w(TAG, "Firebase Firestore not initialized. Using Firebase Public REST Sync mode for 2-device pairing.", e)
+            Log.w(TAG, "Firestore fallback to REST gateway mode", e)
             isFallbackRestMode = true
         }
     }
@@ -57,7 +57,7 @@ class FirebaseTranslationService {
             val roomRef = firestore!!.collection("rooms").document(roomDocId)
             sessionListenerRegistration = roomRef.addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    Log.e(TAG, "Room session listen error, switching to REST polling: ${error.message}")
+                    Log.e(TAG, "Firestore session listen error, switching to REST gateway: ${error.message}")
                     startRestPolling(roomNumber)
                     return@addSnapshotListener
                 }
@@ -84,7 +84,7 @@ class FirebaseTranslationService {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to attach snapshot listener, starting REST sync", e)
+            Log.e(TAG, "Failed to attach snapshot listener, starting REST gateway", e)
             startRestPolling(roomNumber)
         }
     }
@@ -120,7 +120,7 @@ class FirebaseTranslationService {
         }
     }
 
-    // High-speed (0.4s) Polling Engine for instant 2-device pairing over Internet without config files
+    // High-speed 250ms Gateway Engine for instant 2-device pairing over 5G/Wi-Fi
     private fun startRestPolling(roomNumber: Int) {
         pollJob?.cancel()
         pollJob = scope.launch {
@@ -129,11 +129,11 @@ class FirebaseTranslationService {
                     val sessionUrl = URL("$REST_BASE_URL/rooms/room_$roomNumber/session.json")
                     val conn = sessionUrl.openConnection() as HttpURLConnection
                     conn.requestMethod = "GET"
-                    conn.connectTimeout = 3000
-                    conn.readTimeout = 3000
+                    conn.connectTimeout = 2000
+                    conn.readTimeout = 2000
 
                     if (conn.responseCode == 200) {
-                        val reader = InputStreamReader(conn.inputStream)
+                        val reader = InputStreamReader(conn.inputStream, "UTF-8")
                         val sessionObj = JsonParser.parseReader(reader)
                         if (sessionObj.isJsonObject) {
                             val obj = sessionObj.asJsonObject
@@ -162,7 +162,7 @@ class FirebaseTranslationService {
                 } catch (e: Exception) {
                     Log.w(TAG, "REST sync polling fallback error: ${e.message}")
                 }
-                delay(400) // Poll every 400ms for fast sub-0.5s response
+                delay(250) // Poll every 250ms for sub-0.3s instant sync
             }
         }
     }
@@ -173,11 +173,11 @@ class FirebaseTranslationService {
                 val messagesUrl = URL("$REST_BASE_URL/rooms/room_$roomNumber/sessions/$sessionId/messages.json")
                 val conn = messagesUrl.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
-                conn.connectTimeout = 3000
-                conn.readTimeout = 3000
+                conn.connectTimeout = 2000
+                conn.readTimeout = 2000
 
                 if (conn.responseCode == 200) {
-                    val reader = InputStreamReader(conn.inputStream)
+                    val reader = InputStreamReader(conn.inputStream, "UTF-8")
                     val jsonElement = JsonParser.parseReader(reader)
                     val messagesList = mutableListOf<ChatMessage>()
 
@@ -189,7 +189,15 @@ class FirebaseTranslationService {
                         }
                     }
                     messagesList.sortBy { it.timestampMillis }
-                    _chatMessages.value = messagesList
+                    
+                    // Merge local and remote messages seamlessly
+                    val currentList = _chatMessages.value
+                    if (messagesList.size >= currentList.size) {
+                        _chatMessages.value = messagesList
+                    } else if (messagesList.isNotEmpty()) {
+                        val combined = (currentList + messagesList).distinctBy { it.id }.sortedBy { it.timestampMillis }
+                        _chatMessages.value = combined
+                    }
                 }
                 conn.disconnect()
             } catch (e: Exception) {
@@ -225,7 +233,7 @@ class FirebaseTranslationService {
                     firestore!!.collection("rooms").document(roomDocId).set(roomData)
                 }
 
-                // Also push to REST realtime sync for 2-device pairing
+                // Push to Universal Gateway for instant 2-device pairing
                 val url = URL("$REST_BASE_URL/rooms/room_$roomNumber/session.json")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "PUT"
@@ -253,8 +261,12 @@ class FirebaseTranslationService {
 
     fun sendMessage(message: ChatMessage) {
         val current = _currentSession.value ?: return
-        val updatedList = _chatMessages.value + message
-        _chatMessages.value = updatedList
+        
+        // Immediately insert message into local StateFlow for 0.0s instant UI rendering
+        val currentList = _chatMessages.value
+        if (currentList.none { it.id == message.id }) {
+            _chatMessages.value = currentList + message
+        }
 
         scope.launch {
             try {
@@ -270,7 +282,7 @@ class FirebaseTranslationService {
                         .set(message)
                 }
 
-                // Also push to REST realtime database for 2-device sync
+                // Push to REST Universal Gateway
                 val url = URL("$REST_BASE_URL/rooms/room_${current.roomNumber}/sessions/${current.sessionId}/messages/${message.id}.json")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "PUT"

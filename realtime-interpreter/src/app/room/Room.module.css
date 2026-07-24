@@ -1,0 +1,144 @@
+.roomContainer {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background-color: var(--bg-dark);
+  overflow: hidden;
+}
+
+.leftPanel {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  height: 100%;
+  border-right: 1px solid var(--border-color);
+  background: rgba(15, 23, 42, 0.2);
+}
+
+.middlePanel {
+  flex-grow: 1;
+  height: 100%;
+  border-right: 1px solid var(--border-color);
+  background: radial-gradient(circle at 50% 50%, rgba(30, 41, 59, 0.15) 0%, transparent 80%);
+}
+
+.rightPanel {
+  width: 380px;
+  min-width: 380px;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.1);
+}
+
+/* Modal styles for Lobby/Settings */
+.lobbyContainer {
+  display: flex;
+  min-height: 100vh;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem;
+  background: radial-gradient(circle at 50% 30%, #1e293b 0%, #090d16 100%);
+}
+
+.lobbyCard {
+  width: 100%;
+  max-width: 480px;
+  padding: 2.5rem;
+}
+
+.lobbyTitle {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--color-accent);
+  text-align: center;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.03em;
+}
+
+.lobbySubtitle {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.lobbyForm {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.roleSelectContainer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.roleBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.roleBoxActive {
+  border-color: var(--color-accent);
+  background: rgba(56, 189, 248, 0.05);
+}
+
+.roleBoxActiveBuyer {
+  border-color: var(--color-success);
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.roleIcon {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.roleTitle {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* Glossary view in Sidebar */
+.glossaryList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 120px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.glossaryItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.glossaryTerm {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.glossaryTranslation {
+  color: var(--color-accent);
+}
+
+.deleteGlossaryBtn {
+  color: var(--color-live);
+  font-size: 0.7rem;
+  font-weight: bold;
+}
