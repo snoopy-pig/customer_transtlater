@@ -35,8 +35,6 @@ function RoomContent() {
     historyRef.current = history;
   }, [history]);
 
-  const localMicRunningRef = useRef(false);
-
   // Load completed sessions list from localStorage
   useEffect(() => {
     if (!roomId) return;
@@ -222,34 +220,33 @@ function RoomContent() {
     }
   });
 
-  // Microphone Unified State Synchronization Effect
+  // Microphone Collision Management Effect
   useEffect(() => {
     if (!sessionData) return;
-    const { status, micActiveState } = sessionData;
+    const { status, activeMic } = sessionData;
 
     // 1. If meeting ends, stop listening
-    if (status === 'ended' && localMicRunningRef.current) {
-      localMicRunningRef.current = false;
+    if (status === 'ended' && isListening) {
       stopListening();
     }
 
-    // 2. Synchronize microphone state across both screens
-    if (status === 'active') {
-      if (micActiveState === 'on' && !localMicRunningRef.current) {
-        localMicRunningRef.current = true;
-        startListening();
-      } else if (micActiveState === 'off' && localMicRunningRef.current) {
-        localMicRunningRef.current = false;
-        stopListening();
-      }
+    // 2. If another role claims the microphone, stop our mic (alternating lock)
+    if (activeMic && activeMic !== role && isListening) {
+      console.log(`Microphone grabbed by ${activeMic}. Muting our microphone.`);
+      stopListening();
     }
-  }, [sessionData?.status, sessionData?.micActiveState, startListening, stopListening]);
+  }, [sessionData?.status, sessionData?.activeMic, isListening, stopListening, role]);
 
-  // Unified Toggle Mic: updates DB state so both devices turn on/off together
+  // Alternating Toggle Mic: sets activeMic in DB
   const handleToggleMic = async () => {
     if (!roomId) return;
-    const nextState = localMicRunningRef.current ? 'off' : 'on';
-    await updateSession(roomId, { micActiveState: nextState });
+    if (isListening) {
+      stopListening();
+      await updateSession(roomId, { activeMic: null });
+    } else {
+      await updateSession(roomId, { activeMic: role });
+      startListening();
+    }
   };
 
   // End Session (Seller only)
@@ -258,7 +255,6 @@ function RoomContent() {
     if (!window.confirm('상담 세션을 종료하시겠습니까? 현재 기록이 완료된 세션으로 저장되며 보고서 파일이 다운로드됩니다.')) return;
 
     stopListening();
-    localMicRunningRef.current = false;
 
     // Get current timer info
     const startTime = sessionData?.timerStartTime || Date.now();
@@ -303,7 +299,7 @@ function RoomContent() {
       timerDuration: duration,
       liveTranscriptSeller: null,
       liveTranscriptBuyer: null,
-      micActiveState: 'off'
+      activeMic: null
     });
 
     alert('상담이 종료되었으며 미팅 리포트 파일이 다운로드되었습니다.');
@@ -361,7 +357,7 @@ function RoomContent() {
       timerDuration: 0,
       liveTranscriptSeller: null,
       liveTranscriptBuyer: null,
-      micActiveState: 'off'
+      activeMic: null
     });
   };
 

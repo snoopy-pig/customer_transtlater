@@ -24,8 +24,20 @@ export default function TranslationArea({
 
   const isMeetingActive = status === 'active';
 
-  // Bind local audio visualizer to local user's active speaking transcript channel
-  const myLiveTranscript = role === 'seller' ? liveTranscriptSeller : liveTranscriptBuyer;
+  // Determine active speaker based on which channel contains data
+  const liveTranscript = liveTranscriptSeller || liveTranscriptBuyer;
+  const activeSpeaker = liveTranscriptSeller ? 'seller' : (liveTranscriptBuyer ? 'buyer' : null);
+  const activeSpeakerName = activeSpeaker === 'seller' ? '셀러 (Seller)' : (buyerInfo.name || '바이어 (Buyer)');
+
+  // Format target languages info header dynamically based on active speaker
+  const getFlowHeader = () => {
+    if (activeSpeaker === 'seller') {
+      return `SELLER (${sellerLangName}) → BUYER (${buyerLangName})`;
+    } else if (activeSpeaker === 'buyer') {
+      return `BUYER (${buyerLangName}) → SELLER (${sellerLangName})`;
+    }
+    return `대기 중 - 대화를 시작하세요`;
+  };
 
   return (
     <div className={styles.translationArea}>
@@ -40,83 +52,50 @@ export default function TranslationArea({
         </div>
       </div>
 
-      {/* Main Dual-channel Translation Cards Stream */}
-      <div className={styles.streamContainer} style={{ gap: '1.25rem' }}>
-        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          양방향 실시간 동시 통역 채널
+      {/* Main Single Dynamic Translation Card */}
+      <div className={styles.streamContainer}>
+        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+          {getFlowHeader()}
         </span>
 
-        {/* 1. Seller's Live speech translation box */}
-        <div 
-          className={`glass-panel ${styles.streamCard} ${liveTranscriptSeller ? styles.streamCardActive : ''}`}
-          style={{ width: '100%', maxWidth: '600px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', borderRadius: '12px' }}
-        >
+        <div className={`glass-panel ${styles.streamCard} ${liveTranscript ? (activeSpeaker === 'buyer' ? styles.streamCardActiveBuyer : styles.streamCardActive) : ''}`}>
           <div className={styles.speakerMeta}>
-            <span className={styles.roleTag}>Seller</span>
-            <span className={styles.langMeta}>{sellerLangName} → {buyerLangName}</span>
+            <span className={`${styles.roleTag} ${activeSpeaker === 'buyer' ? styles.roleTagBuyer : ''}`}>
+              {activeSpeaker ? (activeSpeaker === 'seller' ? 'Seller' : 'Buyer') : '대기 중'}
+            </span>
+            <span className={styles.langMeta}>
+              {activeSpeaker ? activeSpeakerName : ''}
+            </span>
           </div>
 
-          <div className={styles.originalText} style={{ fontSize: '1.15rem', minHeight: '2.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {liveTranscriptSeller ? (
-              liveTranscriptSeller.originalText || '말씀하시는 중...'
+          <div className={styles.originalText}>
+            {liveTranscript ? (
+              liveTranscript.originalText || '말씀하시는 중...'
             ) : (
-              <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', fontStyle: 'italic' }}>
-                셀러 대기 중 (Seller Silent)
+              <span style={{ color: 'var(--color-text-muted)', fontSize: '1.15rem' }}>
+                {isMeetingActive ? '마이크를 켜고 음성을 입력하세요.' : '미팅이 시작되면 통역이 가능합니다.'}
               </span>
             )}
           </div>
 
-          <div 
-            className={styles.translatedText}
-            style={{ fontSize: '1rem', minHeight: '2.2rem', paddingTop: '0.75rem', borderTop: '1px dashed var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            {liveTranscriptSeller ? (
-              liveTranscriptSeller.translatedText || <span className={styles.translationLoading} style={{ fontSize: '0.9rem' }}>번역 분석 중...</span>
+          <div className={`${styles.translatedText} ${activeSpeaker === 'buyer' ? styles.translatedTextBuyer : ''}`}>
+            {liveTranscript ? (
+              liveTranscript.translatedText ? (
+                liveTranscript.translatedText
+              ) : (
+                <span className={styles.translationLoading}>번역 분석 중...</span>
+              )
             ) : (
-              <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
-                번역 내용이 이곳에 표시됩니다.
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* 2. Buyer's Live speech translation box */}
-        <div 
-          className={`glass-panel ${styles.streamCard} ${liveTranscriptBuyer ? styles.streamCardActiveBuyer : ''}`}
-          style={{ width: '100%', maxWidth: '600px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', borderRadius: '12px' }}
-        >
-          <div className={styles.speakerMeta}>
-            <span className={`${styles.roleTag} ${styles.roleTagBuyer}`}>Buyer</span>
-            <span className={styles.langMeta}>{buyerLangName} → {sellerLangName}</span>
-          </div>
-
-          <div className={styles.originalText} style={{ fontSize: '1.15rem', minHeight: '2.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {liveTranscriptBuyer ? (
-              liveTranscriptBuyer.originalText || '말씀하시는 중...'
-            ) : (
-              <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', fontStyle: 'italic' }}>
-                {buyerInfo.name || '바이어'} 대기 중 (Buyer Silent)
-              </span>
-            )}
-          </div>
-
-          <div 
-            className={`${styles.translatedText} ${styles.translatedTextBuyer}`}
-            style={{ fontSize: '1rem', minHeight: '2.2rem', paddingTop: '0.75rem', borderTop: '1px dashed var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            {liveTranscriptBuyer ? (
-              liveTranscriptBuyer.translatedText || <span className={styles.translationLoading} style={{ fontSize: '0.9rem' }}>번역 분석 중...</span>
-            ) : (
-              <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
-                번역 내용이 이곳에 표시됩니다.
+              <span style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem' }}>
+                실시간 번역이 이곳에 표시됩니다.
               </span>
             )}
           </div>
         </div>
 
         {/* Live Audio Visualizer feedback */}
-        <div style={{ width: '200px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <AudioVisualizer isActive={isListening && myLiveTranscript?.originalText?.length > 0} />
+        <div style={{ width: '200px', height: '32px' }}>
+          <AudioVisualizer isActive={isListening && liveTranscript?.originalText?.length > 0} />
         </div>
       </div>
 
@@ -128,20 +107,18 @@ export default function TranslationArea({
             onClick={onToggleMic}
             disabled={!isMeetingActive}
             style={{
-              padding: '0.8rem 1.8rem',
+              padding: '1rem 2rem',
               borderRadius: '30px',
               display: 'flex',
               alignItems: 'center',
               gap: '0.75rem',
               fontWeight: 700,
-              fontSize: '0.9rem',
               boxShadow: isListening ? '0 0 15px rgba(239, 68, 68, 0.4)' : '0 4px 12px rgba(56, 189, 248, 0.2)',
-              opacity: isMeetingActive ? 1 : 0.5,
-              transition: 'all 0.2s ease'
+              opacity: isMeetingActive ? 1 : 0.5
             }}
           >
             <span>🎙️</span>
-            {isListening ? '내 마이크 끄기' : '내 마이크 켜기'}
+            {isListening ? '음성 인식 종료' : '마이크 켜기 (발언하기)'}
           </button>
           
           <div style={{ height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '0.25rem' }}>
@@ -151,13 +128,9 @@ export default function TranslationArea({
               </p>
             ) : isListening ? (
               <p style={{ color: 'var(--color-success)', fontSize: '0.75rem', fontWeight: 500, margin: 0 }}>
-                내 마이크가 켜져 있습니다. 말하면 실시간 번역됩니다.
+                음성을 말하면 실시간으로 분석하여 자동 변환됩니다.
               </p>
-            ) : (
-              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', margin: 0 }}>
-                상대방과 대화하려면 마이크를 켜 주세요.
-              </p>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.net.HttpURLConnection
 import java.net.URL
 import java.io.InputStreamReader
+import java.io.OutputStreamWriter
 
 class FirebaseTranslationService {
 
@@ -32,14 +33,13 @@ class FirebaseTranslationService {
     private var isFallbackRestMode = false
     private val gson = Gson()
 
-    // Public Universal Firebase Realtime REST Gateway for instant 2-device pairing over internet
-    private val REST_BASE_URL = "https://counter-translation-default-rtdb.firebaseio.com"
+    private val PUBLIC_GATEWAY_URL = "https://kvdb.io/8xZ79tP67m9g24W9w2yK4A"
 
     init {
         try {
             firestore = FirebaseFirestore.getInstance()
         } catch (e: Exception) {
-            Log.w(TAG, "Firestore fallback to REST gateway mode", e)
+            Log.w(TAG, "Firestore fallback to Public Cloud Gateway mode", e)
             isFallbackRestMode = true
         }
     }
@@ -49,7 +49,7 @@ class FirebaseTranslationService {
         val roomDocId = "room_$roomNumber"
 
         if (isFallbackRestMode || firestore == null) {
-            startRestPolling(roomNumber)
+            startGatewayPolling(roomNumber)
             return
         }
 
@@ -57,8 +57,8 @@ class FirebaseTranslationService {
             val roomRef = firestore!!.collection("rooms").document(roomDocId)
             sessionListenerRegistration = roomRef.addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    Log.e(TAG, "Firestore session listen error, switching to REST gateway: ${error.message}")
-                    startRestPolling(roomNumber)
+                    Log.e(TAG, "Firestore session listen error, switching to Public Gateway: ${error.message}")
+                    startGatewayPolling(roomNumber)
                     return@addSnapshotListener
                 }
                 if (snapshot != null && snapshot.exists()) {
@@ -84,8 +84,8 @@ class FirebaseTranslationService {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to attach snapshot listener, starting REST gateway", e)
-            startRestPolling(roomNumber)
+            Log.e(TAG, "Failed to attach snapshot listener, starting Public Gateway", e)
+            startGatewayPolling(roomNumber)
         }
     }
 
@@ -120,23 +120,24 @@ class FirebaseTranslationService {
         }
     }
 
-    // High-speed 250ms Gateway Engine for instant 2-device pairing over 5G/Wi-Fi
-    private fun startRestPolling(roomNumber: Int) {
+    private fun startGatewayPolling(roomNumber: Int) {
         pollJob?.cancel()
         pollJob = scope.launch {
             while (isActive) {
                 try {
-                    val sessionUrl = URL("$REST_BASE_URL/rooms/room_$roomNumber/session.json")
+                    val sessionUrl = URL("$PUBLIC_GATEWAY_URL/room_$roomNumber/session")
                     val conn = sessionUrl.openConnection() as HttpURLConnection
                     conn.requestMethod = "GET"
-                    conn.connectTimeout = 2000
-                    conn.readTimeout = 2000
+                    conn.connectTimeout = 2500
+                    conn.readTimeout = 2500
 
                     if (conn.responseCode == 200) {
                         val reader = InputStreamReader(conn.inputStream, "UTF-8")
-                        val sessionObj = JsonParser.parseReader(reader)
-                        if (sessionObj.isJsonObject) {
-                            val obj = sessionObj.asJsonObject
+                        val responseStr = reader.readText()
+                        conn.disconnect()
+
+                        if (responseStr.isNotBlank()) {
+                            val obj = JsonParser.parseString(responseStr).asJsonObject
                             val activeSessionId = obj.get("active_session_id")?.asString ?: ""
                             val isActiveSession = obj.get("is_active")?.asBoolean ?: false
                             val guestLang = obj.get("guest_language")?.asString ?: TargetLanguage.ENGLISH.code
@@ -151,57 +152,67 @@ class FirebaseTranslationService {
                                     startTimeMillis = startTime
                                 )
                                 _currentSession.value = session
-                                fetchRestMessages(roomNumber, activeSessionId)
+                                fetchGatewayMessages(roomNumber, activeSessionId)
                             } else {
                                 _currentSession.value = null
                                 _chatMessages.value = emptyList()
                             }
                         }
+                    } else {
+                        conn.disconnect()
                     }
-                    conn.disconnect()
                 } catch (e: Exception) {
-                    Log.w(TAG, "REST sync polling fallback error: ${e.message}")
+                    Log.w(TAG, "Gateway polling error: ${e.message}")
                 }
-                delay(250) // Poll every 250ms for sub-0.3s instant sync
+                delay(300)
             }
         }
     }
 
-    private suspend fun fetchRestMessages(roomNumber: Int, sessionId: String) {
+    private suspend fun fetchGatewayMessages(roomNumber: Int, sessionId: String) {
         withContext(Dispatchers.IO) {
             try {
-                val messagesUrl = URL("$REST_BASE_URL/rooms/room_$roomNumber/sessions/$sessionId/messages.json")
+                val messagesUrl = URL("$PUBLIC_GATEWAY_URL/room_$roomNumber/sessions_$sessionId")
                 val conn = messagesUrl.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
-                conn.connectTimeout = 2000
-                conn.readTimeout = 2000
+                conn.connectTimeout = 2500
+                conn.readTimeout = 2500
 
                 if (conn.responseCode == 200) {
                     val reader = InputStreamReader(conn.inputStream, "UTF-8")
-                    val jsonElement = JsonParser.parseReader(reader)
-                    val messagesList = mutableListOf<ChatMessage>()
+                    val responseStr = reader.readText()
+                    conn.disconnect()
 
-                    if (jsonElement.isJsonObject) {
-                        val obj = jsonElement.asJsonObject
-                        obj.entrySet().forEach { entry ->
-                            val msg = gson.fromJson(entry.value, ChatMessage::class.java)
-                            messagesList.add(msg)
+                    if (responseStr.isNotBlank()) {
+                        val jsonElement = JsonParser.parseString(responseStr)
+                        val messagesList = mutableListOf<ChatMessage>()
+
+                        if (jsonElement.isJsonArray) {
+                            val arr = jsonElement.asJsonArray
+                            arr.forEach { item ->
+                                val msg = gson.fromJson(item, ChatMessage::class.java)
+                                messagesList.add(msg)
+                            }
                         }
+                        messagesList.sortBy { it.timestampMillis }
+                        
+                        val currentList = _chatMessages.value
+                        if (messagesList.size >= currentList.size) {
+                            _chatMessages.value = messagesList
+                        } else if (messagesList.isNotEmpty()) {
+                            val combined = (currentList + messagesList).distinctBy { it.id }.sortedBy { it.timestampMillis }
+                            _chatMessages.value = combined
+                        } else {
+                            // Empty list fallback
+                        }
+                    } else {
+                        // Empty response fallback
                     }
-                    messagesList.sortBy { it.timestampMillis }
-                    
-                    // Merge local and remote messages seamlessly
-                    val currentList = _chatMessages.value
-                    if (messagesList.size >= currentList.size) {
-                        _chatMessages.value = messagesList
-                    } else if (messagesList.isNotEmpty()) {
-                        val combined = (currentList + messagesList).distinctBy { it.id }.sortedBy { it.timestampMillis }
-                        _chatMessages.value = combined
-                    }
+                } else {
+                    conn.disconnect()
                 }
-                conn.disconnect()
             } catch (e: Exception) {
-                Log.w(TAG, "Error fetching REST messages: ${e.message}")
+                Log.w(TAG, "Error fetching Gateway messages: ${e.message}")
             }
         }
     }
@@ -221,24 +232,6 @@ class FirebaseTranslationService {
 
         scope.launch {
             try {
-                val roomDocId = "room_$roomNumber"
-                if (!isFallbackRestMode && firestore != null) {
-                    val roomData = hashMapOf(
-                        "active_session_id" to newSessionId,
-                        "is_active" to true,
-                        "guest_language" to guestLanguageCode,
-                        "start_time" to session.startTimeMillis,
-                        "updated_at" to System.currentTimeMillis()
-                    )
-                    firestore!!.collection("rooms").document(roomDocId).set(roomData)
-                }
-
-                // Push to Universal Gateway for instant 2-device pairing
-                val url = URL("$REST_BASE_URL/rooms/room_$roomNumber/session.json")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "PUT"
-                conn.doOutput = true
-                conn.setRequestProperty("Content-Type", "application/json")
                 val payload = gson.toJson(
                     mapOf(
                         "active_session_id" to newSessionId,
@@ -247,11 +240,11 @@ class FirebaseTranslationService {
                         "start_time" to session.startTimeMillis
                     )
                 )
-                conn.outputStream.write(payload.toByteArray(Charsets.UTF_8))
-                conn.responseCode
-                conn.disconnect()
+                postToGateway("$PUBLIC_GATEWAY_URL/room_$roomNumber/session", payload)
+                postToGateway("$PUBLIC_GATEWAY_URL/room_$roomNumber/sessions_$newSessionId", "[]")
+
             } catch (e: Exception) {
-                Log.e(TAG, "Error starting session REST sync", e)
+                Log.e(TAG, "Error starting session Gateway sync", e)
             }
             withContext(Dispatchers.Main) {
                 onComplete(session)
@@ -262,38 +255,22 @@ class FirebaseTranslationService {
     fun sendMessage(message: ChatMessage) {
         val current = _currentSession.value ?: return
         
-        // Immediately insert message into local StateFlow for 0.0s instant UI rendering
         val currentList = _chatMessages.value
-        if (currentList.none { it.id == message.id }) {
-            _chatMessages.value = currentList + message
+        val isExist = currentList.any { it.id == message.id }
+        
+        val updatedList = mutableListOf<ChatMessage>()
+        updatedList.addAll(currentList)
+        if (!isExist) {
+            updatedList.add(message)
         }
+        _chatMessages.value = updatedList
 
         scope.launch {
             try {
-                val roomDocId = "room_${current.roomNumber}"
-                if (!isFallbackRestMode && firestore != null) {
-                    firestore!!
-                        .collection("rooms")
-                        .document(roomDocId)
-                        .collection("sessions")
-                        .document(current.sessionId)
-                        .collection("messages")
-                        .document(message.id)
-                        .set(message)
-                }
-
-                // Push to REST Universal Gateway
-                val url = URL("$REST_BASE_URL/rooms/room_${current.roomNumber}/sessions/${current.sessionId}/messages/${message.id}.json")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "PUT"
-                conn.doOutput = true
-                conn.setRequestProperty("Content-Type", "application/json")
-                val payload = gson.toJson(message)
-                conn.outputStream.write(payload.toByteArray(Charsets.UTF_8))
-                conn.responseCode
-                conn.disconnect()
+                val payload = gson.toJson(updatedList)
+                postToGateway("$PUBLIC_GATEWAY_URL/room_${current.roomNumber}/sessions_${current.sessionId}", payload)
             } catch (e: Exception) {
-                Log.e(TAG, "Error pushing REST message", e)
+                Log.e(TAG, "Error pushing Gateway message", e)
             }
         }
     }
@@ -302,40 +279,48 @@ class FirebaseTranslationService {
         val sessionToClose = _currentSession.value
         val messagesToSave = _chatMessages.value.toList()
 
-        val updatedSession = sessionToClose?.copy(
-            isActive = false,
-            endTimeMillis = System.currentTimeMillis()
-        )
+        val updatedSession = if (sessionToClose != null) {
+            sessionToClose.copy(
+                isActive = false,
+                endTimeMillis = System.currentTimeMillis()
+            )
+        } else {
+            null
+        }
 
         _currentSession.value = null
         _chatMessages.value = emptyList()
 
         scope.launch {
             try {
-                val roomDocId = "room_$roomNumber"
-                if (!isFallbackRestMode && firestore != null && sessionToClose != null) {
-                    val updates = hashMapOf<String, Any>(
-                        "is_active" to false,
-                        "ended_at" to System.currentTimeMillis()
-                    )
-                    firestore!!.collection("rooms").document(roomDocId).update(updates)
-                }
-
-                val url = URL("$REST_BASE_URL/rooms/room_$roomNumber/session.json")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "PUT"
-                conn.doOutput = true
-                conn.setRequestProperty("Content-Type", "application/json")
                 val payload = gson.toJson(mapOf("is_active" to false))
-                conn.outputStream.write(payload.toByteArray(Charsets.UTF_8))
-                conn.responseCode
-                conn.disconnect()
+                postToGateway("$PUBLIC_GATEWAY_URL/room_$roomNumber/session", payload)
             } catch (e: Exception) {
-                Log.e(TAG, "Error ending session REST sync", e)
+                Log.e(TAG, "Error ending session Gateway sync", e)
             }
             withContext(Dispatchers.Main) {
                 onComplete(messagesToSave, updatedSession)
             }
+        }
+    }
+
+    private fun postToGateway(endpointUrl: String, jsonPayload: String) {
+        try {
+            val url = URL(endpointUrl)
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.connectTimeout = 3000
+            conn.readTimeout = 3000
+            conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+            val writer = OutputStreamWriter(conn.outputStream, "UTF-8")
+            writer.write(jsonPayload)
+            writer.flush()
+            writer.close()
+            conn.responseCode
+            conn.disconnect()
+        } catch (e: Exception) {
+            Log.e(TAG, "postToGateway error to $endpointUrl", e)
         }
     }
 
