@@ -20,6 +20,7 @@ class AudioTranslationEngine(private val context: Context) {
 
     private var speechRecognizer: SpeechRecognizer? = null
     private var isContinuousListening = false
+    var isMicEnabled = true // Safe toggle switch for mic
 
     // State Flows for UI
     private val _isListening = MutableStateFlow(false)
@@ -52,15 +53,16 @@ class AudioTranslationEngine(private val context: Context) {
                     override fun onBufferReceived(buffer: ByteArray?) {}
                     override fun onEndOfSpeech() {
                         _isListening.value = false
-                        // Continuous Listening Auto Restart
                         scheduleAutoRestart()
                     }
 
                     override fun onError(error: Int) {
                         _isListening.value = false
                         Log.w(TAG, "STT Error code: $error")
-                        // Continuous Listening Auto Restart even on error
-                        scheduleAutoRestart()
+                        // Avoid rapid error loop restarts
+                        if (error != SpeechRecognizer.ERROR_CLIENT) {
+                            scheduleAutoRestart(1500)
+                        }
                     }
 
                     override fun onResults(results: Bundle?) {
@@ -68,13 +70,12 @@ class AudioTranslationEngine(private val context: Context) {
                         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         if (!matches.isNullOrEmpty()) {
                             val text = matches[0]
-                            if (text.isNotBlank()) {
+                            if (text.isNotBlank() && text.length >= 2) {
                                 _recognizedText.value = text
                                 onSpeechRecognized?.invoke(text, true)
                             }
                         }
-                        // Continuous Listening Auto Restart immediately after result
-                        scheduleAutoRestart()
+                        scheduleAutoRestart(1000)
                     }
 
                     override fun onPartialResults(partialResults: Bundle?) {
@@ -94,23 +95,34 @@ class AudioTranslationEngine(private val context: Context) {
         }
     }
 
-    private fun scheduleAutoRestart() {
-        if (!isContinuousListening) return
+    private fun scheduleAutoRestart(delayMs: Long = 1200) {
+        if (!isContinuousListening || !isMicEnabled) return
         handler.removeCallbacksAndMessages("RESTART_STT")
         handler.postDelayed({
-            if (isContinuousListening) {
+            if (isContinuousListening && isMicEnabled) {
                 startListeningInternal(currentListeningLocale)
             }
-        }, 300)
+        }, delayMs)
+    }
+
+    fun toggleMic(enabled: Boolean) {
+        isMicEnabled = enabled
+        if (!enabled) {
+            stopListening()
+        } else {
+            startListening(currentListeningLocale)
+        }
     }
 
     fun startListening(locale: Locale) {
         isContinuousListening = true
+        isMicEnabled = true
         currentListeningLocale = locale
         startListeningInternal(locale)
     }
 
     private fun startListeningInternal(locale: Locale) {
+        if (!isMicEnabled) return
         handler.post {
             try {
                 speechRecognizer?.stopListening()
@@ -119,14 +131,20 @@ class AudioTranslationEngine(private val context: Context) {
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale.toLanguageTag())
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                    
+                    // Enhanced STT parameters for complete sentence listening without early truncation
+                    putExtra("android.speech.extra.DICTATION_MODE", true)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 3000L)
                 }
                 speechRecognizer?.startListening(intent)
                 _isListening.value = true
-                Log.d(TAG, "Continuous STT Started for locale: $locale")
+                Log.d(TAG, "STT Listening Started for locale: $locale")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start SpeechRecognizer", e)
-                if (isContinuousListening) {
-                    handler.postDelayed({ startListeningInternal(locale) }, 1000)
+                if (isContinuousListening && isMicEnabled) {
+                    handler.postDelayed({ startListeningInternal(locale) }, 2000)
                 }
             }
         }
@@ -146,6 +164,7 @@ class AudioTranslationEngine(private val context: Context) {
 
     fun destroy() {
         isContinuousListening = false
+        isMicEnabled = false
         handler.removeCallbacksAndMessages(null)
         try {
             speechRecognizer?.destroy()

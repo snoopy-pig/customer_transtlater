@@ -13,6 +13,7 @@ import java.util.Locale
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val appPrefs = AppPreferences(application)
     private val firebaseService = FirebaseTranslationService()
     private val audioEngine = AudioTranslationEngine(application)
     private val logExporter = LocalLogExporter(application)
@@ -30,6 +31,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Audio states
     val isListening = audioEngine.isListening
+    private val _isMicEnabled = MutableStateFlow(true)
+    val isMicEnabled: StateFlow<Boolean> = _isMicEnabled.asStateFlow()
 
     // Subtitle Text States
     private val _currentKoreanSubtitle = MutableStateFlow("")
@@ -42,16 +45,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _guestTargetLanguage = MutableStateFlow(TargetLanguage.ENGLISH)
     val guestTargetLanguage: StateFlow<TargetLanguage> = _guestTargetLanguage.asStateFlow()
 
+    // API Key State for Dialog
+    private val _geminiApiKey = MutableStateFlow(appPrefs.getGeminiApiKey())
+    val geminiApiKey: StateFlow<String> = _geminiApiKey.asStateFlow()
+
     private var lastHandledMessageId = ""
 
     init {
+        // Initialize AiTranslationEngine with saved preferences
+        AiTranslationEngine.geminiApiKey = appPrefs.getGeminiApiKey()
+
         audioEngine.onSpeechRecognized = { text, isFinal ->
             if (isFinal && text.isNotBlank()) {
                 handleSpeechRecognizedInput(text)
             }
         }
 
-        // Listen for remote incoming messages and update real-time prompt text without playing TTS voice
         viewModelScope.launch {
             chatMessages.collect { messages ->
                 val latest = messages.lastOrNull()
@@ -62,6 +71,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    fun saveGeminiApiKey(key: String) {
+        appPrefs.saveGeminiApiKey(key)
+        _geminiApiKey.value = appPrefs.getGeminiApiKey()
+        Toast.makeText(getApplication(), "Gemini API Key가 저장되었습니다.", Toast.LENGTH_SHORT).show()
     }
 
     fun selectRoomAndRole(room: CounterRoom, role: DeviceRole) {
@@ -81,6 +96,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         firebaseService.startSession(room.roomId, language.code) { session ->
             startListeningForGuest(language)
         }
+    }
+
+    // Dynamic Language Switching anytime during session
+    fun changeGuestLanguage(language: TargetLanguage) {
+        _guestTargetLanguage.value = language
+        val room = _selectedRoom.value ?: return
+        if (currentSession.value?.isActive == true) {
+            firebaseService.startSession(room.roomId, language.code) {
+                startListeningForGuest(language)
+            }
+            Toast.makeText(getApplication(), "언어가 ${language.displayName}로 변경되었습니다.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun toggleMicState() {
+        val newState = !_isMicEnabled.value
+        _isMicEnabled.value = newState
+        audioEngine.toggleMic(newState)
     }
 
     private fun startListeningForGuest(language: TargetLanguage) {
@@ -103,7 +136,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             if (role == DeviceRole.STAFF) {
-                // Staff Spoke Korean -> AI Translates to Guest Language
                 _currentKoreanSubtitle.value = recognizedText
                 
                 val translatedGuestText = AiTranslationEngine.translateWithAi(
@@ -123,7 +155,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 firebaseService.sendMessage(message)
 
             } else {
-                // Guest Spoke Foreign Language -> AI Translates to Korean
                 _currentGuestSubtitle.value = recognizedText
                 
                 val translatedKoreanText = AiTranslationEngine.translateWithAi(
@@ -150,6 +181,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         handleSpeechRecognizedInput(text)
     }
 
+    fun resetToSetup() {
+        audioEngine.stopListening()
+        firebaseService.detachListeners()
+        _selectedRoom.value = null
+        _selectedRole.value = null
+        _currentKoreanSubtitle.value = ""
+        _currentGuestSubtitle.value = ""
+    }
+
     fun endSessionByStaff() {
         val room = _selectedRoom.value ?: return
         audioEngine.stopListening()
@@ -163,8 +203,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
 
-            _currentKoreanSubtitle.value = ""
-            _currentGuestSubtitle.value = ""
+            resetToSetup()
         }
     }
 

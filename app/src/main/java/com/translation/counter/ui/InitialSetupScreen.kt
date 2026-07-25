@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.translation.counter.data.CounterRoom
 import com.translation.counter.data.DeviceRole
+import com.translation.counter.ui.components.SettingsDialog
 import com.translation.counter.ui.theme.CardBg
 import com.translation.counter.ui.theme.CardBorder
 import com.translation.counter.ui.theme.DarkBg
@@ -31,10 +33,21 @@ import com.translation.counter.ui.theme.PrimaryCyan
 
 @Composable
 fun InitialSetupScreen(
+    geminiApiKey: String,
+    onSaveApiKey: (String) -> Unit,
     onSetupComplete: (CounterRoom, DeviceRole) -> Unit
 ) {
     var selectedRoom by remember { mutableStateOf(CounterRoom.ROOM_1) }
     var selectedRole by remember { mutableStateOf(DeviceRole.STAFF) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+
+    if (showSettingsDialog) {
+        SettingsDialog(
+            currentApiKey = geminiApiKey,
+            onSaveKey = onSaveApiKey,
+            onDismiss = { showSettingsDialog = false }
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -52,7 +65,7 @@ fun InitialSetupScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Header Title Card
+            // Header Title Card with Settings Icon
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -61,29 +74,46 @@ fun InitialSetupScreen(
                 shape = RoundedCornerShape(20.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "🌐 1:1 창구 통역 시스템",
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Color.White,
-                            fontSize = 22.sp
-                        ),
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "스마트폰 기기 설정 (Room & Role)",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = Color.White.copy(alpha = 0.7f),
-                            fontSize = 14.sp
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "🌐 1:1 창구 통역 시스템",
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White,
+                                fontSize = 22.sp
+                            ),
+                            textAlign = TextAlign.Center
                         )
-                    )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "스마트폰 기기 설정 (Room & Role)",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 14.sp
+                            )
+                        )
+                    }
+
+                    // Settings Icon Button
+                    IconButton(
+                        onClick = { showSettingsDialog = true },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            tint = PrimaryCyan,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
 
@@ -234,7 +264,7 @@ fun InitialSetupScreen(
                                                 color = Color.White
                                             )
                                             Text(
-                                                text = if (role == DeviceRole.STAFF) "한국어 고정 / 세션 종료 제어" else "4개 국기 언어 선택 카운터",
+                                                text = if (role == DeviceRole.STAFF) "한국어 고정 / 세션 종료 제어" else "언어 자유 변경 카운터",
                                                 fontSize = 12.sp,
                                                 color = Color.White.copy(alpha = 0.6f)
                                             )

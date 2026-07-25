@@ -1,6 +1,8 @@
 package com.translation.counter.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8,6 +10,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,11 +25,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.translation.counter.data.CounterRoom
 import com.translation.counter.data.SpeakerType
 import com.translation.counter.data.TargetLanguage
 import com.translation.counter.ui.components.FlagButton
-import com.translation.counter.ui.components.MicPulseAnimation
 import com.translation.counter.ui.theme.*
 
 @Composable
@@ -31,16 +39,96 @@ fun GuestCounterScreen(
 ) {
     val currentSession by viewModel.currentSession.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
-    val isListening by viewModel.isListening.collectAsState()
+    val isMicEnabled by viewModel.isMicEnabled.collectAsState()
     val currentKoreanSub by viewModel.currentKoreanSubtitle.collectAsState()
     val currentGuestSub by viewModel.currentGuestSubtitle.collectAsState()
     val selectedLanguage by viewModel.guestTargetLanguage.collectAsState()
 
     val isSessionActive = currentSession?.isActive == true
     val listState = rememberLazyListState()
+    var showLangSelectorDialog by remember { mutableStateOf(false) }
 
-    // Newest messages stay on TOP (최신 대화 최상단 노출)
     val reversedMessages = remember(chatMessages) { chatMessages.reversed() }
+
+    // Language Change Dialog Modal
+    if (showLangSelectorDialog) {
+        Dialog(onDismissRequest = { showLangSelectorDialog = false }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                colors = CardDefaults.cardColors(containerColor = CardBg),
+                shape = RoundedCornerShape(20.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "🌐 언어 변경 (Change Language)",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        TargetLanguage.values().forEach { lang ->
+                            val isSelected = lang == selectedLanguage
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(64.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable {
+                                        viewModel.changeGuestLanguage(lang)
+                                        showLangSelectorDialog = false
+                                    }
+                                    .border(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) PrimaryCyan else CardBorder,
+                                        shape = RoundedCornerShape(14.dp)
+                                    ),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) PrimaryCyan.copy(alpha = 0.25f) else DarkBg
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(horizontal = 16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(text = lang.flagEmoji, fontSize = 28.sp)
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text(
+                                            text = lang.nativeName,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            fontSize = 16.sp
+                                        )
+                                        Text(
+                                            text = lang.displayName,
+                                            color = Color.White.copy(alpha = 0.6f),
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    TextButton(onClick = { showLangSelectorDialog = false }) {
+                        Text("닫기 (Close)", color = TextSubtle)
+                    }
+                }
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -48,7 +136,7 @@ fun GuestCounterScreen(
             .background(DarkBg)
             .padding(12.dp)
     ) {
-        // Compact Header Bar
+        // Guest Header Bar with Back & Language Switch Controls
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -57,6 +145,23 @@ fun GuestCounterScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Back Button
+                IconButton(
+                    onClick = { viewModel.resetToSetup() },
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(CardBg, RoundedCornerShape(8.dp))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Back to setup",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
                 Surface(
                     color = PrimaryCyan.copy(alpha = 0.2f),
                     shape = RoundedCornerShape(8.dp)
@@ -69,7 +174,7 @@ fun GuestCounterScreen(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     )
                 }
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "손님용 (Guest)",
                     color = TextWhite,
@@ -78,10 +183,47 @@ fun GuestCounterScreen(
                 )
             }
 
-            MicPulseAnimation(
-                isListening = isListening,
-                isSpeaking = false
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Dynamic Language Change Button (상시 언어 변경 버튼)
+                Button(
+                    onClick = { showLangSelectorDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryCyan),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.height(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Language,
+                        contentDescription = "Change Language",
+                        tint = Color.Black,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "${selectedLanguage.flagEmoji} ${selectedLanguage.displayName}",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black,
+                        fontSize = 12.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Mic Toggle Button
+                IconButton(
+                    onClick = { viewModel.toggleMicState() },
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(if (isMicEnabled) ActiveGreen.copy(alpha = 0.3f) else Color.Red.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                ) {
+                    Icon(
+                        imageVector = if (isMicEnabled) Icons.Default.Mic else Icons.Default.MicOff,
+                        contentDescription = "Mic Toggle",
+                        tint = if (isMicEnabled) ActiveGreen else Color.Red,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
         }
 
         if (!isSessionActive) {
@@ -180,7 +322,7 @@ fun GuestCounterScreen(
                             fontSize = 13.sp
                         )
                         Text(
-                            text = selectedLanguage.displayName,
+                            text = "${selectedLanguage.flagEmoji} ${selectedLanguage.displayName}",
                             color = PrimaryCyan,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold

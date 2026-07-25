@@ -9,7 +9,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -22,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.translation.counter.data.CounterRoom
 import com.translation.counter.data.SpeakerType
-import com.translation.counter.ui.components.MicPulseAnimation
 import com.translation.counter.ui.theme.*
 
 @Composable
@@ -33,6 +35,7 @@ fun StaffCounterScreen(
     val currentSession by viewModel.currentSession.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
     val isListening by viewModel.isListening.collectAsState()
+    val isMicEnabled by viewModel.isMicEnabled.collectAsState()
     val currentKoreanSub by viewModel.currentKoreanSubtitle.collectAsState()
     val currentGuestSub by viewModel.currentGuestSubtitle.collectAsState()
 
@@ -40,7 +43,6 @@ fun StaffCounterScreen(
     var manualInputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    // Newest messages stay on TOP (최신 대화 최상단 노출)
     val reversedMessages = remember(chatMessages) { chatMessages.reversed() }
 
     Column(
@@ -49,7 +51,7 @@ fun StaffCounterScreen(
             .background(DarkBg)
             .padding(12.dp)
     ) {
-        // Staff Header Bar
+        // Staff Header Bar with Back & Mic Controls
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -58,6 +60,23 @@ fun StaffCounterScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Back Button (초기화 / 뒤로가기)
+                IconButton(
+                    onClick = { viewModel.resetToSetup() },
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(CardBg, RoundedCornerShape(8.dp))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Back to setup",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
                 Surface(
                     color = PrimaryCyan.copy(alpha = 0.2f),
                     shape = RoundedCornerShape(8.dp)
@@ -70,7 +89,7 @@ fun StaffCounterScreen(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     )
                 }
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "직원용 (Staff)",
                     color = TextWhite,
@@ -80,15 +99,37 @@ fun StaffCounterScreen(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                MicPulseAnimation(
-                    isListening = isListening,
-                    isSpeaking = false
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+                // Mic Toggle Button
+                Button(
+                    onClick = { viewModel.toggleMicState() },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isMicEnabled) ActiveGreen.copy(alpha = 0.3f) else Color.Red.copy(alpha = 0.3f)
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.height(36.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isMicEnabled) Icons.Default.Mic else Icons.Default.MicOff,
+                        contentDescription = "Mic Toggle",
+                        tint = if (isMicEnabled) ActiveGreen else Color.Red,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (isMicEnabled) "마이크 ON" else "마이크 OFF",
+                        color = Color.White,
+                        fontSize = 12.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Session End Button
                 Button(
                     onClick = { viewModel.endSessionByStaff() },
                     colors = ButtonDefaults.buttonColors(containerColor = AccentCoral),
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(8.dp),
                     enabled = isSessionActive,
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     modifier = Modifier.height(36.dp)
@@ -110,7 +151,7 @@ fun StaffCounterScreen(
             }
         }
 
-        // TOP 50% AREA: Real-time Chat History Feed (최신순 상단 노출)
+        // TOP 50% AREA: Real-time Chat History Feed
         Card(
             modifier = Modifier
                 .fillMaxWidth()

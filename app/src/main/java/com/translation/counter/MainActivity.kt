@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -48,9 +49,19 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val selectedRoom by viewModel.selectedRoom.collectAsState()
                     val selectedRole by viewModel.selectedRole.collectAsState()
+                    val geminiApiKey by viewModel.geminiApiKey.collectAsState()
+
+                    // Hardware Back Button Handler
+                    BackHandler(enabled = selectedRoom != null) {
+                        viewModel.resetToSetup()
+                    }
 
                     if (selectedRoom == null || selectedRole == null) {
                         InitialSetupScreen(
+                            geminiApiKey = geminiApiKey,
+                            onSaveApiKey = { newKey ->
+                                viewModel.saveGeminiApiKey(newKey)
+                            },
                             onSetupComplete = { room, role ->
                                 viewModel.selectRoomAndRole(room, role)
                             }
