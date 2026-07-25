@@ -200,7 +200,7 @@ export default function Lobby() {
                   key={room.id}
                   style={{
                     display: 'flex',
-                    justify-content: 'space-between',
+                    justifyContent: 'space-between',
                     alignItems: 'center',
                     padding: '0.75rem 1rem',
                     borderRadius: '8px',
