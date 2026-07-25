@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './room/Room.module.css';
 import compStyles from '../components/Components.module.css';
-import { updateSession } from '../lib/sync';
+import { updateSession, getAllRooms, deleteRoom } from '../lib/sync';
 
 export default function Lobby() {
   const router = useRouter();
@@ -15,6 +15,21 @@ export default function Lobby() {
   const [buyerExtra, setBuyerExtra] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Room Manager state
+  const [activeRooms, setActiveRooms] = useState([]);
+
+  // Fetch list of active rooms on mount and periodically
+  const fetchRooms = async () => {
+    const rooms = await getAllRooms();
+    setActiveRooms(rooms);
+  };
+
+  useEffect(() => {
+    fetchRooms();
+    const interval = setInterval(fetchRooms, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -40,13 +55,12 @@ export default function Lobby() {
           sellerKeywords: '',
           status: 'active', // Set to active immediately on Seller start
           languages: { seller: 'ko-KR', buyer: 'zh-CN' },
-          liveTranscript: null,
-          glossary: [],
-          timerStartTime: Date.now(),
-          timerDuration: 0
+          liveTranscriptSeller: null,
+          liveTranscriptBuyer: null,
+          activeMic: null
         };
 
-        // Write initial session to shared database (local storage or Firebase)
+        // Write initial session to shared database
         await updateSession(formattedRoomId, initialSession);
       }
 
@@ -60,9 +74,16 @@ export default function Lobby() {
     }
   };
 
+  const handleDeleteRoom = async (roomIdToDelete, e) => {
+    e.stopPropagation();
+    if (!window.confirm(`방 번호 ${roomIdToDelete}의 세션을 완전히 삭제하시겠습니까?`)) return;
+    await deleteRoom(roomIdToDelete);
+    await fetchRooms();
+  };
+
   return (
-    <div className={styles.lobbyContainer}>
-      <div className={`glass-panel ${styles.lobbyCard}`}>
+    <div className={styles.lobbyContainer} style={{ flexDirection: 'column', gap: '2rem', padding: '2rem 1rem' }}>
+      <div className={`glass-panel ${styles.lobbyCard}`} style={{ maxWidth: '600px', width: '100%' }}>
         <h1 className={styles.lobbyTitle}>Gemini AI 자동통역</h1>
         <p className={styles.lobbySubtitle}>실시간 언어 번역 및 화면 동기화 솔루션</p>
 
@@ -101,7 +122,7 @@ export default function Lobby() {
             </div>
           </div>
 
-          {/* Buyer Information - Only show or require details if Seller is setting up, or optional for Buyer */}
+          {/* Buyer Information */}
           {role === 'seller' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -156,6 +177,84 @@ export default function Lobby() {
             {isLoading ? '설정 중...' : role === 'seller' ? '미팅 시작 (회의실 개설)' : '회의 입장'}
           </button>
         </form>
+      </div>
+
+      {/* Active Room Manager Panel */}
+      <div className={`glass-panel ${styles.lobbyCard}`} style={{ maxWidth: '600px', width: '100%', padding: '1.5rem' }}>
+        <h2 style={{ fontSize: '1.1rem', color: 'var(--color-accent)', margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700 }}>
+          🛡️ 활성화된 방 관리 (Active Rooms Manager)
+        </h2>
+        
+        {activeRooms.length === 0 ? (
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem', fontStyle: 'italic', textAlign: 'center', margin: '1rem 0' }}>
+            현재 개설된 회의실이 없습니다.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '250px', overflowY: 'auto', paddingRight: '0.25rem' }}>
+            {activeRooms.map((room) => {
+              const { name = '미등록', company = '미등록' } = room.buyerInfo || {};
+              const isEnded = room.status === 'ended';
+              const isActive = room.status === 'active';
+              return (
+                <div 
+                  key={room.id}
+                  style={{
+                    display: 'flex',
+                    justify-content: 'space-between',
+                    alignItems: 'center',
+                    padding: '0.75rem 1rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    transition: 'all 0.2s ease',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => {
+                    setRoomId(room.id);
+                    setRole('buyer'); // Auto-configure role input on click!
+                  }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'white' }}>Room {room.id}</span>
+                      <span 
+                        style={{
+                          fontSize: '0.65rem',
+                          padding: '0.1rem 0.4rem',
+                          borderRadius: '10px',
+                          fontWeight: 600,
+                          backgroundColor: isActive ? 'rgba(16, 185, 129, 0.15)' : (isEnded ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255,255,255,0.1)'),
+                          color: isActive ? 'var(--color-success)' : (isEnded ? 'var(--color-live)' : 'var(--color-text-muted)')
+                        }}
+                      >
+                        {isActive ? '진행 중' : (isEnded ? '종료됨' : '대기 중')}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+                      바이어: {name} ({company})
+                    </span>
+                  </div>
+                  <button
+                    onClick={(e) => handleDeleteRoom(room.id, e)}
+                    style={{
+                      padding: '0.35rem 0.75rem',
+                      fontSize: '0.75rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                      color: '#ff5c5c',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      fontWeight: 600
+                    }}
+                  >
+                    방 삭제
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

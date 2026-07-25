@@ -51,6 +51,16 @@ function RoomContent() {
     }
   }, [roomId, role, router]);
 
+  // Automatically redirect back to lobby when session is ended
+  useEffect(() => {
+    if (sessionData && sessionData.status === 'ended' && !activeCompletedSessionId) {
+      if (role === 'buyer') {
+        alert('셀러가 회의를 종료하여 로비로 이동합니다.');
+      }
+      router.push('/');
+    }
+  }, [sessionData?.status, activeCompletedSessionId, role, router]);
+
   // Subscribe to shared session state and active dialogue history
   useEffect(() => {
     if (!roomId) return;

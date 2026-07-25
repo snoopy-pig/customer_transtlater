@@ -219,3 +219,58 @@ export async function clearHistory(roomId) {
     }
   }
 }
+
+/**
+ * Retrieves all active/existing room sessions from Firestore or LocalStorage
+ */
+export async function getAllRooms() {
+  if (isFirebaseConfigured) {
+    try {
+      const querySnapshot = await getDocs(collection(db, 'rooms'));
+      return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } catch (e) {
+      console.error("Error getting all rooms:", e);
+      return [];
+    }
+  } else {
+    if (typeof window === 'undefined') return [];
+    const rooms = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.startsWith('session_')) {
+        const roomId = key.substring(8);
+        try {
+          const data = JSON.parse(localStorage.getItem(key));
+          rooms.push({ id: roomId, ...data });
+        } catch (e) {
+          console.warn("Error parsing local session for room", roomId, e);
+        }
+      }
+    }
+    return rooms;
+  }
+}
+
+/**
+ * Completely deletes a room session and its history logs from database/local storage
+ */
+export async function deleteRoom(roomId) {
+  if (isFirebaseConfigured) {
+    try {
+      const docRef = doc(db, 'rooms', roomId);
+      await deleteDoc(docRef);
+
+      // Clean history subcollection
+      const historyRef = collection(db, 'rooms', roomId, 'history');
+      const snapshot = await getDocs(historyRef);
+      const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+      await Promise.all(deletePromises);
+    } catch (e) {
+      console.error("Error deleting room document:", e);
+    }
+  } else {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(`session_${roomId}`);
+    localStorage.removeItem(`history_${roomId}`);
+  }
+}
