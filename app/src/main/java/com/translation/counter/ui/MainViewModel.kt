@@ -15,8 +15,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val appPrefs = AppPreferences(application)
     private val firebaseService = FirebaseTranslationService()
+    private val nsdEngine = NsdWebSocketEngine(application)
     private val audioEngine = AudioTranslationEngine(application)
-    private val logExporter = LocalLogExporter(application)
+    private val weekLogger = LocalWeekLogger(application)
 
     // Setup state
     private val _selectedRoom = MutableStateFlow<CounterRoom?>(null)
@@ -52,12 +53,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var lastHandledMessageId = ""
 
     init {
-        // Initialize AiTranslationEngine with saved preferences
         AiTranslationEngine.geminiApiKey = appPrefs.getGeminiApiKey()
 
         audioEngine.onSpeechRecognized = { text, isFinal ->
             if (isFinal && text.isNotBlank()) {
                 handleSpeechRecognizedInput(text)
+            }
+        }
+
+        // Bind NSD P2P Events
+        nsdEngine.onSessionStarted = { langCode ->
+            val lang = TargetLanguage.values().firstOrNull { it.code == langCode } ?: TargetLanguage.ENGLISH
+            _guestTargetLanguage.value = lang
+        }
+
+        nsdEngine.onChatMessageReceived = { msg ->
+            if (chatMessages.value.none { it.id == msg.id }) {
+                firebaseService.sendMessage(msg)
+            }
+        }
+
+        // Remote Mic Trigger Event handler (Received on tourist phone when staff presses remote button)
+        nsdEngine.onRemoteTouristMicTriggered = {
+            if (_selectedRole.value == DeviceRole.GUEST) {
+                _isMicEnabled.value = true
+                audioEngine.startListening(getLocaleForLanguage(_guestTargetLanguage.value))
+                Toast.makeText(getApplication(), "🎤 직원이 마이크를 켜주었습니다. 말씀해주세요!", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -85,7 +106,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         firebaseService.attachRoomListener(room.roomId)
 
         if (role == DeviceRole.STAFF) {
+            nsdEngine.startStaffServer()
             startListeningForStaff()
+        } else {
+            nsdEngine.startTouristClient()
         }
     }
 
@@ -93,20 +117,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val room = _selectedRoom.value ?: return
         _guestTargetLanguage.value = language
 
+        nsdEngine.broadcastMessage("START_SESSION", mapOf("lang" to language.code))
+
         firebaseService.startSession(room.roomId, language.code) { session ->
             startListeningForGuest(language)
         }
     }
 
-    // Dynamic Language Switching anytime during session
     fun changeGuestLanguage(language: TargetLanguage) {
         _guestTargetLanguage.value = language
         val room = _selectedRoom.value ?: return
+        nsdEngine.broadcastMessage("START_SESSION", mapOf("lang" to language.code))
         if (currentSession.value?.isActive == true) {
             firebaseService.startSession(room.roomId, language.code) {
                 startListeningForGuest(language)
             }
             Toast.makeText(getApplication(), "언어가 ${language.displayName}로 변경되었습니다.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Remote activate tourist microphone from staff device (직원용 2번 버튼)
+    fun triggerRemoteTouristMic() {
+        if (_selectedRole.value == DeviceRole.STAFF) {
+            nsdEngine.broadcastMessage("TRIGGER_TOURIST_MIC")
+            Toast.makeText(getApplication(), "🔊 관광객 마이크를 원격으로 켰습니다.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -117,17 +151,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun startListeningForGuest(language: TargetLanguage) {
-        val locale = when (language) {
-            TargetLanguage.ENGLISH -> Locale.US
-            TargetLanguage.SIMPLIFIED_CHINESE -> Locale.CHINA
-            TargetLanguage.TRADITIONAL_CHINESE -> Locale.TAIWAN
-            TargetLanguage.JAPANESE -> Locale.JAPAN
-        }
+        val locale = getLocaleForLanguage(language)
         audioEngine.startListening(locale)
     }
 
     private fun startListeningForStaff() {
         audioEngine.startListening(Locale.KOREA)
+    }
+
+    private fun getLocaleForLanguage(language: TargetLanguage): Locale {
+        return when (language) {
+            TargetLanguage.ENGLISH -> Locale.US
+            TargetLanguage.SIMPLIFIED_CHINESE -> Locale.CHINA
+            TargetLanguage.TRADITIONAL_CHINESE -> Locale.TAIWAN
+            TargetLanguage.JAPANESE -> Locale.JAPAN
+        }
     }
 
     private fun handleSpeechRecognizedInput(recognizedText: String) {
@@ -152,6 +190,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     guestText = translatedGuestText,
                     guestLanguageCode = currentLang.code
                 )
+                nsdEngine.broadcastMessage("CHAT_MESSAGE", message)
                 firebaseService.sendMessage(message)
 
             } else {
@@ -171,6 +210,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     guestText = recognizedText,
                     guestLanguageCode = currentLang.code
                 )
+                nsdEngine.broadcastMessage("CHAT_MESSAGE", message)
                 firebaseService.sendMessage(message)
             }
         }
@@ -184,6 +224,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun resetToSetup() {
         audioEngine.stopListening()
         firebaseService.detachListeners()
+        nsdEngine.stop()
         _selectedRoom.value = null
         _selectedRole.value = null
         _currentKoreanSubtitle.value = ""
@@ -194,15 +235,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val room = _selectedRoom.value ?: return
         audioEngine.stopListening()
 
-        firebaseService.endSession(room.roomId) { messages, session ->
-            val exportedFiles = logExporter.exportSessionLogs(session, messages)
-            val msg = if (exportedFiles.isNotEmpty()) {
-                "세션 종료 완료! ${exportedFiles.size}개 로컬 파일 저장됨"
-            } else {
-                "세션 종료 완료."
-            }
-            Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
+        nsdEngine.broadcastMessage("END_SESSION")
 
+        firebaseService.endSession(room.roomId) { messages, session ->
+            if (session != null) {
+                val savedFile = weekLogger.saveSessionToWeeklyJson(session, messages)
+                val msg = if (savedFile != null) {
+                    "대화 종료! 주간 파일 저장됨 (${savedFile.name})"
+                } else {
+                    "대화 종료 완료."
+                }
+                Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
+            }
             resetToSetup()
         }
     }
@@ -210,6 +254,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         firebaseService.detachListeners()
+        nsdEngine.stop()
         audioEngine.destroy()
     }
 }
