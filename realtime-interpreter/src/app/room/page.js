@@ -44,19 +44,22 @@ function RoomContent() {
     }
   }, [roomId]);
 
-  // Redirect to lobby if parameters are missing
+  // Redirect to lobby if parameters are missing (using bulletproof window check to avoid Next.js hydration lag)
   useEffect(() => {
-    if (!roomId || !role || (role !== 'seller' && role !== 'buyer')) {
+    if (typeof window === 'undefined') return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlRoom = urlParams.get('room');
+    const urlRole = urlParams.get('role');
+    
+    if (!urlRoom || !urlRole || (urlRole !== 'seller' && urlRole !== 'buyer')) {
       router.push('/');
     }
-  }, [roomId, role, router]);
+  }, [router]);
 
-  // Automatically redirect back to lobby when session is ended
+  // Automatically redirect back to lobby when session is ended (strictly for Buyer)
   useEffect(() => {
-    if (sessionData && sessionData.status === 'ended' && !activeCompletedSessionId) {
-      if (role === 'buyer') {
-        alert('셀러가 회의를 종료하여 로비로 이동합니다.');
-      }
+    if (sessionData && sessionData.status === 'ended' && !activeCompletedSessionId && role === 'buyer') {
+      alert('셀러가 회의를 종료하여 로비로 이동합니다.');
       router.push('/');
     }
   }, [sessionData?.status, activeCompletedSessionId, role, router]);
